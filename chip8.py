@@ -1,4 +1,5 @@
 import sys
+import traceback
 import time
 from array import array
 from pprint import pprint
@@ -7,6 +8,7 @@ RAM_SIZE = 4096
 SCREEN_WIDTH = 64
 SCREEN_HEIGHT = 32
 SPRITE_WIDTH = 8
+BYTE_LENGHT = 8
 
 # Each character in the font set is an 8 × 5 sprite
 FONT_SET = [
@@ -43,41 +45,68 @@ class VM:
     def step(self):
         '''Every instruction is 16 bits, or in other words, 2 bytes or 4 nibbles, so it translates to four hexadecimal digits.'''
 
-        first_byte = self.ram[self.pc]
-        second_byte = self.ram[self.pc+1]
-        self.pc += 2
+        try:
+            first_byte = self.ram[self.pc]
+            second_byte = self.ram[self.pc+1]
+            self.pc += 2
 
-        #first_nible = (first_byte >> 4)
-        #second_nible = (first_byte & 0b00001111)
+            instruction = (first_byte << BYTE_LENGHT) | second_byte
 
-        instruction = (first_byte << 8) | second_byte
+            N1 = self.extract_bits_from_byte(first_byte, 0,4)  # (first_byte >> 4)
+            N2 = self.extract_bits_from_byte(first_byte, 4,4)  # (first_byte & 0b00001111)
+            N3 = self.extract_bits_from_byte(second_byte, 0,4)
+            N4 = self.extract_bits_from_byte(second_byte, 4,4)
 
-        D1 = self.extract_bits_from_byte(first_byte, 0,4)
-        D2 = self.extract_bits_from_byte(first_byte, 4,4)
-        D3 = self.extract_bits_from_byte(second_byte, 0,4)
-        D4 = self.extract_bits_from_byte(second_byte, 4,4)
 
-        match(D1, D2, D3, D4):
-            case (0x6, _, _, _): # 6xnn - Load normal register with immediate value
-                print(f"Set register[{D2}] to {second_byte}")
-                self.v[D2] = second_byte
-            case (0xA, _, _, _): # Annn - Set i to nnn
-                value = (instruction & 0b0000111111111111)
-                print(f"Load index register with immediate value {value}")
-                self.i = value
-            case (0xD, _, _, _): # Dxyn - Draw a sprite that’s n high at (v[x], v[y]); set the flag on a collision.
-                print(f"draw a {D4} height sprite at v[{D2}]={self.v[D2]} v[{D3}]={self.v[D3]}")
-                self.draw_screen(self.v[D2], self.v[D3], D4)
-            case (0x0, 0x0, 0xE, 0x0): # 00e0 - Clear the screen
-                self.clear_screen()
-            case (0x1, _, _, _): # 1nnn - Jump to nnn
-                value = (instruction & 0b0000111111111111)
-                print(f"Jump to {value}")
-                self.pc = value
-            case _:
-                print("unknown instruction " + hex(instruction))
-                breakpoint()
-        time.sleep(0.1)
+            match(N1, N2, N3, N4):
+                case (0x6, _, _, _):
+                    # 6xnn - Load normal register with immediate value
+                    print(f"Set register[{N2}] to {second_byte}")
+                    self.v[N2] = second_byte
+                case (0xA, _, _, _):
+                    # Annn - Set i to nnn
+                    value = (instruction & 0b0000111111111111)
+                    print(f"Load index register with immediate value {value}")
+                    self.i = value
+                case (0x7, _, _, _):
+                    # 7xkk - Add v[x], kk
+                    print(f"Add v[{N2}], {second_byte}")
+                    self.v[N2] += second_byte
+                case (0xD, _, _, _):
+                    # Dxyn - Draw a sprite that’s n high at (v[x], v[y]); set the flag on a collision.
+                    print(f"draw a {N4} height sprite at v[{N2}]={self.v[N2]} v[{N3}]={self.v[N3]}")
+                    self.draw_sprite(self.v[N2], self.v[N3], N4)
+                case (0x0, 0x0, 0xE, 0x0):
+                    # 00e0 - Clear the screen
+                    self.clear_screen()
+                case (0x1, _, _, _):
+                    # 1nnn - Jump to nnn
+                    value = (instruction & 0b0000111111111111)
+                    print(f"Jump to {value}")
+                    self.pc = value
+                case (0x3, _, _, _):
+                    # 3xkk - SE Vx, byte
+                    # Skip next instruction if Vx = kk.
+                    if self.v[N2] == second_byte:
+                        self.pc += 2
+                case (0x4, _, _, _):
+                    # 4xkk - SNE Vx, byte
+                    # Skip next instruction if Vx != kk.
+                    if self.v[N2] != second_byte:
+                        self.pc += 2
+                case (0x5, _, _, 0x0):
+                    # 5xy0 - SE Vx, Vy
+                    # Skip next instruction if Vx = Vy.
+                    if self.v[N2] == self.v[N3]:
+                        self.pc += 2
+                case _:
+                    print(f"Instruction {hex(instruction)} not implemented yet!")
+                    breakpoint()
+            time.sleep(0.1)
+
+        except Exception as e:
+            print(f"exception '{e}' at pc = {self.pc}, instruction = {hex(instruction)}")
+            breakpoint()
 
 
     def clear_screen(self):
@@ -86,24 +115,32 @@ class VM:
                 self.display_buffer[y][x] = 0
 
     def extract_bits_from_byte(self, data: int, start: int, length: int) -> int:
-        byte_len = 8
-
         bitmask = 0
         for i in range(0, length):
             bitmask = (bitmask << 1) | 1
 
-        shift = byte_len-start-length
+        shift = BYTE_LENGHT-start-length
         bits = (data >> shift) & bitmask
         return bits
 
-    def draw_screen(self, x: int, y: int, height: int):
+    def draw_sprite(self, x: int, y: int, height: int):
+        '''Dxyn - DRW Vx, Vy, nibble
+Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision (TODO).
+
+The interpreter reads n bytes from memory, starting at the address stored in I. These bytes are then displayed as sprites on screen at coordinates (Vx, Vy). Sprites are XORed onto the existing screen'''
 
         # Every sprite is 8 pixels wide and can be anywhere between 1 and 15 pixels high
         for yi in range(0, height):
-            row = (self.ram[self.i + yi])
+            row = self.ram[self.i + yi]
             for xi in range(0, SPRITE_WIDTH):
-                bit = self.extract_bits_from_byte(row, xi, 1)
-                self.display_buffer[yi+y][xi+x] = bit ^ self.display_buffer[yi+y][xi+x]
+
+                if xi+x-1 >= SCREEN_WIDTH or yi+y-1 >= SCREEN_HEIGHT:
+                    print(f"trying to draw outside screen ({yi+y-1},{xi+x-1}), skipping instruction")
+                    continue
+
+                new_bit = self.extract_bits_from_byte(row, xi, 1)
+                current_bit = self.display_buffer[yi+y-1][xi+x-1]
+                self.display_buffer[yi+y-1][xi+x-1] = new_bit ^ current_bit
 
         for yi in range(0, SCREEN_HEIGHT):
             line = ''
@@ -118,12 +155,14 @@ class VM:
     def run(self, filename: str):
         with open(filename, mode='rb') as fp:
             rom = fp.read()
-            self.rom = list(array('B', rom))
-            # Load program to memory starting at address 0x200
-            self.ram[512:len(self.rom)] = array('B', rom)
+
+        self.rom = list(array('B', rom))
+        # Load program to memory starting at address 0x200 (512)
+        self.ram[0x200:len(self.rom)] = array('B', rom)
 
         while True:
             self.step()
+
 
 filename = sys.argv[1]
 vm = VM()

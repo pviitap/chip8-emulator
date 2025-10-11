@@ -9,6 +9,7 @@ SCREEN_WIDTH = 64
 SCREEN_HEIGHT = 32
 SPRITE_WIDTH = 8
 BYTE_LENGHT = 8
+SPEED = 0
 
 # Each character in the font set is an 8 × 5 sprite
 FONT_SET = [
@@ -40,6 +41,7 @@ class VM:
         self.ram = array('B',[0]*RAM_SIZE)
         # Load the font set into the first 80 bytes
         self.ram[0:len(FONT_SET)] = array('B', FONT_SET)
+        self.stack = []
         self.display_buffer = [[0 for i in range(SCREEN_WIDTH)] for j in range(SCREEN_HEIGHT)]
 
     def step(self):
@@ -59,50 +61,57 @@ class VM:
 
 
             match(N1, N2, N3, N4):
-                case (0x6, _, _, _):
-                    # 6xnn - Load normal register with immediate value
-                    print(f"Set register[{N2}] to {second_byte}")
-                    self.v[N2] = second_byte
-                case (0xA, _, _, _):
-                    # Annn - Set i to nnn
-                    value = (instruction & 0b0000111111111111)
-                    print(f"Load index register with immediate value {value}")
-                    self.i = value
-                case (0x7, _, _, _):
-                    # 7xkk - Add v[x], kk
-                    print(f"Add v[{N2}], {second_byte}")
-                    self.v[N2] += second_byte
-                case (0xD, _, _, _):
-                    # Dxyn - Draw a sprite that’s n high at (v[x], v[y]); set the flag on a collision.
-                    print(f"draw a {N4} height sprite at v[{N2}]={self.v[N2]} v[{N3}]={self.v[N3]}")
-                    self.draw_sprite(self.v[N2], self.v[N3], N4)
                 case (0x0, 0x0, 0xE, 0x0):
-                    # 00e0 - Clear the screen
+                    print(f"clear the screen")
                     self.clear_screen()
                 case (0x1, _, _, _):
-                    # 1nnn - Jump to nnn
-                    value = (instruction & 0b0000111111111111)
-                    print(f"Jump to {value}")
+                    value = instruction & 0b0000111111111111
+                    print(f"jump to {value}")
+                    self.pc = value
+                case (0x2, _, _, _):
+                    value = instruction & 0b0000111111111111
+                    print(f"call the subroutine at {value}")
+                    self.stack.append(self.pc)
                     self.pc = value
                 case (0x3, _, _, _):
-                    # 3xkk - SE Vx, byte
-                    # Skip next instruction if Vx = kk.
+                    print(f"skip the next instruction if {self.v[N2]} = {second_byte}")
                     if self.v[N2] == second_byte:
                         self.pc += 2
                 case (0x4, _, _, _):
-                    # 4xkk - SNE Vx, byte
-                    # Skip next instruction if Vx != kk.
+                    print(f"skip the next instruction if {self.v[N2]} != {second_byte}")
                     if self.v[N2] != second_byte:
                         self.pc += 2
                 case (0x5, _, _, 0x0):
-                    # 5xy0 - SE Vx, Vy
-                    # Skip next instruction if Vx = Vy.
+                    print(f"skip the next instruction if {self.v[N2]} = {self.v[N3]}")
                     if self.v[N2] == self.v[N3]:
                         self.pc += 2
+                case (0x6, _, _, _):
+                    print(f"set register[{N2}] to {second_byte}")
+                    self.v[N2] = second_byte
+                case (0x7, _, _, _):
+                    print(f"add {self.v[N2]}, {second_byte}")
+                    self.v[N2] = (self.v[N2] + second_byte) % 255
+                case (0x8, _, _, 0x0):
+                    print(f"set {self.v[N2]} to {self.v[N3]}")
+                    self.v[N2] = self.v[N3]
+                case (0x9, _, _, 0x0):
+                    print(f"skip the next instruction if {self.v[N2]} does not equal {self.v[N3]}")
+                    if self.v[N2] != self.v[N3]:
+                        self.pc += 2
+                case (0xA, _, _, _):
+                    value = (instruction & 0b0000111111111111)
+                    print(f"set index register with immediate value {value}")
+                    self.i = value
+                case (0xD, _, _, _):
+                    print(f"draw a {N4} height sprite at (v[{N2}]={self.v[N2]}, v[{N3}]={self.v[N3]})")
+                    self.draw_sprite(self.v[N2], self.v[N3], N4)
+                case (0x0, _, 0xE, 0xE):
+                    print(f"return from a subroutine")
+                    self.pc = self.stack.pop()
                 case _:
-                    print(f"Instruction {hex(instruction)} not implemented yet!")
+                    print(f"instruction {hex(instruction)} not implemented yet!")
                     breakpoint()
-            time.sleep(0.1)
+            time.sleep(SPEED)
 
         except Exception as e:
             print(f"exception '{e}' at pc = {self.pc}, instruction = {hex(instruction)}")

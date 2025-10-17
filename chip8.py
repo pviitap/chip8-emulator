@@ -90,10 +90,28 @@ class VM:
                     self.v[N2] = second_byte
                 case (0x7, _, _, _):
                     print(f"add {self.v[N2]}, {second_byte}")
-                    self.v[N2] = (self.v[N2] + second_byte) % 255
+                    self.v[N2] = (self.v[N2] + second_byte) % 256
                 case (0x8, _, _, 0x0):
                     print(f"set {self.v[N2]} to {self.v[N3]}")
                     self.v[N2] = self.v[N3]
+                case (0x8, _, _, 0x1):
+                    print(f"set {self.v[N2]} to OR {self.v[N2]}, {self.v[N3]}")
+                    self.v[N2] = self.v[N3] | self.v[N3]
+                case (0x8, _, _, 0x2):
+                    print(f"set {self.v[N2]} to AND {self.v[N2]}, {self.v[N3]}")
+                    self.v[N2] = self.v[N3] & self.v[N3]
+                case (0x8, _, _, 0x3):
+                    print(f"set {self.v[N2]} to XOR {self.v[N2]}, {self.v[N3]}")
+                    self.v[N2] = self.v[N3] ^ self.v[N3]
+                case (0x8, _, _, 0x4):
+                    print(f"set {self.v[N2]} to ADD {self.v[N2]}, {self.v[N3]} with carry flag")
+                    res = self.v[N3] + self.v[N3]
+                    if res < 256:
+                        self.v[N2] = res
+                        self.v[0xF] = 0
+                    else:
+                        self.v[N2] = res % 256
+                        self.v[0xF] = 1
                 case (0x9, _, _, 0x0):
                     print(f"skip the next instruction if {self.v[N2]} does not equal {self.v[N3]}")
                     if self.v[N2] != self.v[N3]:

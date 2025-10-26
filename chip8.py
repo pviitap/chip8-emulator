@@ -96,22 +96,49 @@ class VM:
                     self.v[N2] = self.v[N3]
                 case (0x8, _, _, 0x1):
                     print(f"set {self.v[N2]} to OR {self.v[N2]}, {self.v[N3]}")
-                    self.v[N2] = self.v[N3] | self.v[N3]
+                    self.v[N2] = self.v[N2] | self.v[N3]
                 case (0x8, _, _, 0x2):
                     print(f"set {self.v[N2]} to AND {self.v[N2]}, {self.v[N3]}")
-                    self.v[N2] = self.v[N3] & self.v[N3]
+                    self.v[N2] = self.v[N2] & self.v[N3]
                 case (0x8, _, _, 0x3):
                     print(f"set {self.v[N2]} to XOR {self.v[N2]}, {self.v[N3]}")
-                    self.v[N2] = self.v[N3] ^ self.v[N3]
+                    self.v[N2] = self.v[N2] ^ self.v[N3]
                 case (0x8, _, _, 0x4):
-                    print(f"set {self.v[N2]} to ADD {self.v[N2]}, {self.v[N3]} with carry flag")
-                    res = self.v[N3] + self.v[N3]
+                    print(f"set {self.v[N2]} to {self.v[N2]} + {self.v[N3]}, set VF to carry")
+                    res = self.v[N2] + self.v[N3]
                     if res < 256:
+                        self.v[0xF] = 0
                         self.v[N2] = res
+                    else:
+                        self.v[0xF] = 1
+                        self.v[N2] = res % 256
+                case (0x8, _, _, 0x5):
+                    print(f"set {self.v[N2]} to {self.v[N2]} - {self.v[N3]}, set VF to NOT borrow")
+                    # If Vx > Vy, then VF is set to 1, otherwise 0. Then Vy is subtracted from Vx, and the results stored in Vx.
+                    res = self.v[N2] - self.v[N3]
+                    if res < 0:
                         self.v[0xF] = 0
                     else:
-                        self.v[N2] = res % 256
                         self.v[0xF] = 1
+                    self.v[N2] = res % 256
+                case (0x8, _, _, 0x6):
+                    print(f"set {self.v[N2]} to {self.v[2]} SHR 1, set VF to the least-significant bit")
+                    lsb = self.v[N2] & 0b00000001
+                    self.v[N2] = self.v[N2] >> 1
+                    self.v[0xF] = lsb
+                case (0x8, _, _, 0x7):
+                    print(f"set {self.v[N2]} to {self.v[N3]} - {self.v[N2]}, set VF to NOT borrow")
+                    res = self.v[N3] - self.v[N2]
+                    if res < 0:
+                        self.v[0xF] = 0
+                    else:
+                        self.v[0xF] = 1
+                    self.v[N2] = res % 256
+                case (0x8, _, _, 0xE):
+                    print(f"set {self.v[N2]} to {self.v[2]} SHL 1, set VF to the most-significant bit")
+                    msb = self.v[N2] >> 7
+                    self.v[N2] = (self.v[N2] << 1 & 0b11111111)
+                    self.v[0xF] = msb
                 case (0x9, _, _, 0x0):
                     print(f"skip the next instruction if {self.v[N2]} does not equal {self.v[N3]}")
                     if self.v[N2] != self.v[N3]:
@@ -136,11 +163,6 @@ class VM:
             breakpoint()
 
 
-    def clear_screen(self):
-        for y in range(0, SCREEN_HEIGHT):
-            for x in range(0, SCREEN_WIDTH):
-                self.display_buffer[y][x] = 0
-
     def extract_bits_from_byte(self, data: int, start: int, length: int) -> int:
         bitmask = 0
         for i in range(0, length):
@@ -149,6 +171,12 @@ class VM:
         shift = BYTE_LENGHT-start-length
         bits = (data >> shift) & bitmask
         return bits
+
+
+    def clear_screen(self):
+        for y in range(0, SCREEN_HEIGHT):
+            for x in range(0, SCREEN_WIDTH):
+                self.display_buffer[y][x] = 0
 
     def draw_sprite(self, x: int, y: int, height: int):
         '''Dxyn - DRW Vx, Vy, nibble

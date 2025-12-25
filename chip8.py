@@ -1,6 +1,7 @@
 import sys
 import traceback
 import time
+import math
 from array import array
 from pprint import pprint
 
@@ -153,6 +154,26 @@ class VM:
                 case (0x0, _, 0xE, 0xE):
                     print(f"return from a subroutine")
                     self.pc = self.stack.pop()
+                case (0xf, _, 0x6, 0x5):
+                    print(f"read registers V0 through V{N2} from memory starting at location I")
+                    for r in range(0, N2 + 1):
+                        self.v[r] = self.ram[self.i + r]
+                case (0xf, _, 0x5, 0x5):
+                    print(f"store registers V0 through V{N2} in memory starting at location I")
+                    for r in range(0, N2 + 1):
+                        self.ram[self.i + r] = self.v[r]
+                case (0xf, _, 0x3, 0x3):
+                    print(f"store BCD representation of Vx in memory locations I, I+1, and I+2.")
+                    val = self.v[N2]
+                    bcd1 = math.floor(val/100)
+                    bcd2 = math.floor( (val-bcd1*100) / 10 )
+                    bcd3 = (val-bcd1*100 - bcd2*10)
+                    self.ram[self.i] = bcd1
+                    self.ram[self.i + 1] = bcd2
+                    self.ram[self.i + 2 ] = bcd3
+                case (0xf, _, 0x1, 0xe):
+                    print(f"set I = I + Vx")
+                    self.i = self.i + self.v[N2]
                 case _:
                     print(f"instruction {hex(instruction)} not implemented yet!")
                     breakpoint()
